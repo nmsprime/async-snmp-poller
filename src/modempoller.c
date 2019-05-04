@@ -31,10 +31,6 @@
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/library/large_fd_set.h>
 
-/****************************** GLOBAL VARIABLES *****************************/
-int activeHosts, hostCount, nonRepeaters, downstreamOids, upstreamOids;
-MYSQL_RES *result;
-
 /****************************** GLOBAL STRUCTURES ****************************/
 /* to keep track which segment is sent */
 typedef enum pass { NON_REP, DOWNSTREAM, UPSTREAM, FINISH } pass_t;
@@ -66,9 +62,14 @@ struct oid_s {
 /* context structure to keep track of the current request */
 typedef struct hostContext {
     struct snmp_session *session; /* which host is currently processed */
-    struct oid_s *currentOid; /* which OID is or was processed */
+    long reqids[FINISH];
     FILE *outputFile; /* to which file should the response be written to */
 } hostContext_t;
+
+/****************************** GLOBAL VARIABLES *****************************/
+int activeHosts, hostCount;
+int itemCount[FINISH] = {0};
+MYSQL_RES *result;
 
 /********************************* FUNCTIONS *********************************/
 /*
@@ -108,6 +109,20 @@ void connectToMySql()
     mysql_close(con);
 }
 
+struct oid_s *getSegmentLastOid(long reqid, long *host_reqids, pass_t *segment) {
+    int last = -1;
+
+    for ((*segment) = 0; (*segment) < FINISH; (*segment)++) {
+        last += itemCount[*segment];
+
+        if (reqid == host_reqids[*segment]) {
+            return &oids[last];
+        }
+    }
+
+    return NULL;
+}
+
 /*****************************************************************************/
 /*
  * This function sets the prerequisorities for the polling algorithm.
@@ -124,7 +139,7 @@ void initialize()
 {
     struct oid_s *currentOid = oids;
     struct rlimit lim = {1024*1024, 1024*1024};
-    activeHosts = hostCount = nonRepeaters = upstreamOids = downstreamOids = 0;
+    activeHosts = hostCount = 0;
 
     setrlimit(RLIMIT_NOFILE, &lim);
 
@@ -143,15 +158,7 @@ void initialize()
             exit(1);
         }
 
-        if (currentOid->segment == NON_REP)
-            nonRepeaters++;
-
-        if (currentOid->segment == DOWNSTREAM)
-            downstreamOids++;
-
-        if (currentOid->segment == UPSTREAM)
-            upstreamOids++;
-
+        itemCount[currentOid->segment]++;
         currentOid++;
     }
 
@@ -218,7 +225,7 @@ int processResult(int status, hostContext_t *hostContext, struct snmp_pdu *respo
  *
  * returns netsnmp_variable_list *
  */
-netsnmp_variable_list *getLastVarBiniding(netsnmp_variable_list *varlist)
+netsnmp_variable_list *getLastVarBinding(netsnmp_variable_list *varlist)
 {
     while (varlist) {
         if (!varlist->next_variable)
@@ -227,28 +234,6 @@ netsnmp_variable_list *getLastVarBiniding(netsnmp_variable_list *varlist)
     }
 
     return NULL;
-}
-
-/*****************************************************************************/
-/*
- * Utility function as this is called multiple times over the course of the
- * program. This sends a "new" Bulk request.
- *
- * hostContext_t *hostContext - pointer to the current hostcontext structure
- * struct snmp_pdu *request - request pdu
- *
- * returns int
- */
-int sendNextBulkRequest(hostContext_t *hostContext, struct snmp_pdu *request)
-{
-    if (snmp_send(hostContext->session, request)) {
-        return 1;
-    } else {
-        snmp_perror("snmp_send");
-        snmp_free_pdu(request);
-    }
-
-    return 0;
 }
 
 /*****************************************************************************/
@@ -263,17 +248,31 @@ int sendNextBulkRequest(hostContext_t *hostContext, struct snmp_pdu *request)
  *
  * returns void
  */
-void addPackagePayload(struct snmp_pdu *request, hostContext_t *hostContext, netsnmp_variable_list *varlist, pass_t segment,
-                       int updateOids)
+int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varlist, struct oid_s *oid)
 {
-    while (hostContext->currentOid->segment == segment) {
-        if (updateOids)
-            hostContext->currentOid->Oid[hostContext->currentOid->OidLen] = varlist->name[varlist->name_length - 1];
+    struct snmp_pdu *request;
+    pass_t segment = oid->segment;
 
-        snmp_add_null_var(request, hostContext->currentOid->Oid, hostContext->currentOid->OidLen + updateOids);
+    request = snmp_pdu_create(SNMP_MSG_GETBULK);
+    request->non_repeaters = 0;
+    request->max_repetitions = MAX_REPETITIONS;
 
-        hostContext->currentOid++;
+    while (oid->segment == segment) {
+        oid->Oid[oid->OidLen] = varlist->name[varlist->name_length - 1];
+        snmp_add_null_var(request, oid->Oid, oid->OidLen + 1);
+
+        oid++;
     }
+
+    if (snmp_send(hostContext->session, request)) {
+        hostContext->reqids[segment] = request->reqid;
+        return 1;
+    } else {
+        snmp_perror("snmp_send");
+        snmp_free_pdu(request);
+    }
+
+    return 0;
 }
 
 /*****************************************************************************/
@@ -297,59 +296,30 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
 
     if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
         if (processResult(STAT_SUCCESS, hostContext, responseData)) {
-            int root = -1;
-            struct snmp_pdu *request;
+            pass_t segment;
+            struct oid_s *oid;
             netsnmp_variable_list *varlist;
 
-            request = snmp_pdu_create(SNMP_MSG_GETBULK);
-            request->non_repeaters = 0;
-            request->max_repetitions = MAX_REPETITIONS;
+            oid = getSegmentLastOid(reqid, hostContext->reqids, &segment);
 
-            varlist = getLastVarBiniding(responseData->variables);
+            /* printf("\nsegment: %d\nlastOid: ", segment); */
+            /* print_objid(oid->Oid, oid->OidLen); */
 
-            switch ((hostContext->currentOid - 1)->segment) {
-            case NON_REP:
-                addPackagePayload(request, hostContext, varlist, DOWNSTREAM, 0);
+            if (segment == NON_REP) {
+                /* maybe goto? */
+                activeHosts--;
+                return 1;
+            }
 
-                if (sendNextBulkRequest(hostContext, request))
+
+            varlist = getLastVarBinding(responseData->variables);
+
+            if (!memcmp(oid->Oid, varlist->name, oid->OidLen * sizeof(oid))) {
+                oid -= itemCount[segment] - 1;
+                /* printf("continue with: "); */
+                /* print_objid(oid->Oid, oid->OidLen); */
+                if (sendNextBulkRequest(hostContext, varlist, oid))
                     return 1;
-                break;
-            case DOWNSTREAM:
-                root = memcmp((hostContext->currentOid - 1)->Oid, varlist->name,
-                              ((hostContext->currentOid - 1)->OidLen) * sizeof(oid));
-
-                if (root == 0) {
-                    hostContext->currentOid = hostContext->currentOid - downstreamOids;
-
-                    addPackagePayload(request, hostContext, varlist, DOWNSTREAM, 1);
-
-                    if (sendNextBulkRequest(hostContext, request))
-                        return 1;
-                    break;
-                }
-            case UPSTREAM:
-                if (hostContext->currentOid->segment == FINISH) {
-                    root = memcmp((hostContext->currentOid - 1)->Oid, varlist->name,
-                                  ((hostContext->currentOid - 1)->OidLen) * sizeof(oid));
-
-                    if (root == 0) {
-                        hostContext->currentOid = hostContext->currentOid - upstreamOids;
-
-                        addPackagePayload(request, hostContext, varlist, UPSTREAM, 1);
-
-                        if (sendNextBulkRequest(hostContext, request))
-                            return 1;
-                    }
-                    break;
-                }
-
-                addPackagePayload(request, hostContext, varlist, UPSTREAM, 0);
-
-                if (sendNextBulkRequest(hostContext, request))
-                    return 1;
-                break;
-            case FINISH:
-                break;
             }
         }
     } else {
@@ -372,20 +342,22 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
  */
 void asynchronous()
 {
-    int i;
+    pass_t i;
     MYSQL_ROW currentHost;
     hostContext_t *hostContext;
     hostContext_t allHosts[hostCount]; /* one hostContext structure per Host in DB */
 
-    struct snmp_pdu *request;
+    struct snmp_pdu *request[FINISH];
     struct oid_s *currentOid = oids;
 
-    request = snmp_pdu_create(SNMP_MSG_GETBULK);
-    request->non_repeaters = nonRepeaters;
-    request->max_repetitions = 0;
+    for (i = 0; i < FINISH; i++) {
+        request[i] = snmp_pdu_create(SNMP_MSG_GETBULK);
+        request[i]->non_repeaters = (i == NON_REP) ? itemCount[i] : 0;
+        request[i]->max_repetitions = (i == NON_REP) ? 0 : MAX_REPETITIONS;
+    }
 
-    while (currentOid->segment == NON_REP) {
-        snmp_add_null_var(request, currentOid->Oid, currentOid->OidLen);
+    while (currentOid->segment != FINISH) {
+        snmp_add_null_var(request[currentOid->segment], currentOid->Oid, currentOid->OidLen);
         currentOid++;
     }
 
@@ -408,14 +380,16 @@ void asynchronous()
             snmp_perror("snmp_open");
             continue;
         }
-        hostContext->currentOid = currentOid;
         hostContext->outputFile = fopen(session.peername, "w");
 
-        if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request))) {
-            activeHosts++;
-        } else {
-            snmp_perror("snmp_send");
-            snmp_free_pdu(newRequest);
+        for (i = 0; i < FINISH; i++) {
+            if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request[i]))) {
+                hostContext->reqids[i] = newRequest->reqid;
+                activeHosts++;
+            } else {
+                snmp_perror("snmp_send");
+                snmp_free_pdu(newRequest);
+            }
         }
     }
 
@@ -441,7 +415,8 @@ void asynchronous()
     }
 
     /* cleanup */
-    snmp_free_pdu(request);
+    for (i = 0; i < FINISH; i++)
+        snmp_free_pdu(request[i]);
 
     for (hostContext = allHosts, i = 0; i < hostCount; hostContext++, i++)
         if (hostContext->session)
