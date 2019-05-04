@@ -26,6 +26,7 @@
 
 /********************************* INCLUDES **********************************/
 #include <mysql.h>
+#include <sys/resource.h>
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/library/large_fd_set.h>
@@ -122,7 +123,10 @@ void connectToMySql()
 void initialize()
 {
     struct oid_s *currentOid = oids;
+    struct rlimit lim = {1024*1024, 1024*1024};
     activeHosts = hostCount = nonRepeaters = upstreamOids = downstreamOids = 0;
+
+    setrlimit(RLIMIT_NOFILE, &lim);
 
     /* initialize library */
     init_snmp("asynchapp");
