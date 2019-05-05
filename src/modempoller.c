@@ -25,6 +25,7 @@
 #define TIMEOUT 5000000
 
 /********************************* INCLUDES **********************************/
+#include <ctype.h>
 #include <mysql.h>
 #include <sys/resource.h>
 #include <net-snmp/net-snmp-config.h>
@@ -80,20 +81,21 @@ MYSQL_RES *result;
  *
  * returns void
  */
-void connectToMySql()
+void connectToMySql(const char *hostname, const char *username, const char *password, const char *database)
 {
     MYSQL *con = mysql_init(NULL);
-    char host[] = "localhost";
-    char user[] = "cactiuser";
-    char pass[] = "secret";
-    char db[] = "cacti";
 
     if (!con) {
         fprintf(stderr, "%s\n", mysql_error(con));
         exit(1);
     }
 
-    if (!mysql_real_connect(con, host, user, pass, db, 0, NULL, 0)) {
+    if (!mysql_real_connect(con,
+                            hostname ? hostname : "localhost",
+                            username ? username : "cactiuser",
+                            password ? password : "cactiuser",
+                            database ? database : "cacti",
+                            0, NULL, 0)) {
         fprintf(stderr, "%s\n", mysql_error(con));
         mysql_close(con);
         exit(1);
@@ -161,9 +163,6 @@ void initialize()
         itemCount[currentOid->segment]++;
         currentOid++;
     }
-
-    /* connect to database */
-    connectToMySql();
 }
 
 /*****************************************************************************/
@@ -443,10 +442,41 @@ void cleanup()
  */
 int main(int argc, char **argv)
 {
+    int c;
+    const char *database = NULL, *hostname = NULL, *password = NULL, *username = NULL;
+    static char usage[] = "usage: %s [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]\n";
+
+    while ((c = getopt(argc, argv, "d:h:p:u:")) != -1)
+        switch (c) {
+        case 'd':
+            database = optarg;
+            break;
+        case 'h':
+            hostname = optarg;
+            break;
+        case 'p':
+            password = optarg;
+            break;
+        case 'u':
+            username = optarg;
+            break;
+        case '?':
+            if (optopt == 'd' || optopt == 'h' || optopt == 'p' || optopt == 'u')
+                fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+            else if (isprint(optopt))
+                fprintf(stderr, "Unknown option `-%c'.\n", optopt);
+            else
+                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+
+            fprintf(stderr, usage, argv[0]);
+            return 1;
+        default:
+            abort();
+        }
+
     initialize();
-
+    connectToMySql(hostname, username, password, database);
     asynchronous();
-
     cleanup();
 
     return 0;
