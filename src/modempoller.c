@@ -301,43 +301,32 @@ void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
  */
 int async_response(int operation, struct snmp_session *sp, int reqid, struct snmp_pdu *responseData, void *magic)
 {
+    pass_t segment;
+    struct oid_s *oid;
+    netsnmp_variable_list *varlist;
     hostContext_t *hostContext = (hostContext_t *)magic;
 
-    if (operation == NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
-        if (processResult(STAT_SUCCESS, hostContext, responseData)) {
-            pass_t segment;
-            struct oid_s *oid;
-            netsnmp_variable_list *varlist;
-
-            oid = getSegmentLastOid(reqid, hostContext->reqids, &segment);
-
-            /* printf("\nsegment: %d\nlastOid: ", segment); */
-            /* print_objid(oid->Oid, oid->OidLen); */
-
-            if (segment == NON_REP) {
-                update_active_hosts(reqid, hostContext->reqids, segment);
-                return 1;
-            }
-
-            varlist = getLastVarBinding(responseData->variables);
-
-            if (!memcmp(oid->Oid, varlist->name, oid->OidLen * sizeof(oid))) {
-                oid -= itemCount[segment] - 1;
-                /* printf("continue with: "); */
-                /* print_objid(oid->Oid, oid->OidLen); */
-                if (sendNextBulkRequest(hostContext, varlist, oid))
-                    return 1;
-            } else {
-                update_active_hosts(reqid, hostContext->reqids, segment);
-                return 1;
-            }
-        }
-    } else {
+    if (operation != NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
         processResult(STAT_TIMEOUT, hostContext, responseData);
+        activeHosts--;
+        return 1;
+    }
+    if (!processResult(STAT_SUCCESS, hostContext, responseData))
+        return 1;
+
+    oid = getSegmentLastOid(reqid, hostContext->reqids, &segment);
+    if (segment == NON_REP) {
+        update_active_hosts(reqid, hostContext->reqids, segment);
+        return 1;
     }
 
-    /* something went wrong (or end of variables), this session not active any more */
-    activeHosts--;
+    varlist = getLastVarBinding(responseData->variables);
+    if (!memcmp(oid->Oid, varlist->name, oid->OidLen * sizeof(oid))) {
+        oid -= itemCount[segment] - 1;
+        sendNextBulkRequest(hostContext, varlist, oid);
+    } else {
+        update_active_hosts(reqid, hostContext->reqids, segment);
+    }
 
     return 1;
 }
