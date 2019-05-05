@@ -21,7 +21,7 @@
 /********************************** DEFINES **********************************/
 #define _GNU_SOURCE
 #define MAX_REPETITIONS 9
-#define RETRIES 5
+#define RETRIES 3
 #define TIMEOUT 5000000
 
 /********************************* INCLUDES **********************************/
@@ -275,6 +275,15 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
     return 0;
 }
 
+void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
+{
+    static const long zero[FINISH] = { 0 };
+    host_reqids[segment] = 0;
+
+    if (!memcmp(zero, host_reqids, sizeof(zero)))
+        activeHosts--;
+}
+
 /*****************************************************************************/
 /*
  * State machine that gets called asynchronously each time a new SNMP packet
@@ -306,11 +315,9 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
             /* print_objid(oid->Oid, oid->OidLen); */
 
             if (segment == NON_REP) {
-                /* maybe goto? */
-                activeHosts--;
+                update_active_hosts(reqid, hostContext->reqids, segment);
                 return 1;
             }
-
 
             varlist = getLastVarBinding(responseData->variables);
 
@@ -320,6 +327,9 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
                 /* print_objid(oid->Oid, oid->OidLen); */
                 if (sendNextBulkRequest(hostContext, varlist, oid))
                     return 1;
+            } else {
+                update_active_hosts(reqid, hostContext->reqids, segment);
+                return 1;
             }
         }
     } else {
@@ -385,7 +395,8 @@ void asynchronous()
         for (i = 0; i < FINISH; i++) {
             if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request[i]))) {
                 hostContext->reqids[i] = newRequest->reqid;
-                activeHosts++;
+                if (!i)
+                    activeHosts++;
             } else {
                 snmp_perror("snmp_send");
                 snmp_free_pdu(newRequest);
@@ -394,7 +405,7 @@ void asynchronous()
     }
 
     /* async event loop - loops while any active hosts */
-    while (activeHosts) {
+    while (activeHosts > 0) {
         int fds = 0, block = 1;
         struct timeval timeout;
         netsnmp_large_fd_set fdset;
