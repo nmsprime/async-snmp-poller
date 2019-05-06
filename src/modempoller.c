@@ -60,11 +60,11 @@ struct oid_s {
     { FINISH }
 };
 
-/* context structure to keep track of the current request */
-typedef struct hostContext {
-    struct snmp_session *session; /* which host is currently processed */
-    long reqids[FINISH]; /* the currently valid request id per segment */
-    FILE *outputFile; /* to which file should the response be written to */
+
+typedef struct hostContext {                            /* context structure to keep track of the current request */
+    struct snmp_session *session;                       /* which host is currently processed */
+    long requestIds[FINISH];                            /* the currently valid request id per segment */
+    FILE *outputFile;                                   /* to which file should the response be written to */
 } hostContext_t;
 
 /****************************** GLOBAL VARIABLES *****************************/
@@ -118,22 +118,22 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
 
 /*****************************************************************************/
 /*
- * Identify the current segment (passed by reference) using the request id
- * and return the last oid of this segment
+ * Identify the current segment (passed by reference) using the request id and
+ * return the last oid of this segment
  *
  * long reqid - the request id found in the modem response
- * long *host_reqids - pointer to the array of request ids send to the modem
+ * long *requestIds - pointer to the array of request ids send to the modem
  * pass_t segment - segment to be identified
  *
  * returns oid_s *
  */
-struct oid_s *getSegmentLastOid(long reqid, long *host_reqids, pass_t *segment) {
+struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment) {
     int last = -1;
 
     for ((*segment) = 0; (*segment) < FINISH; (*segment)++) {
         last += itemCount[*segment];
 
-        if (reqid == host_reqids[*segment]) {
+        if (reqid == requestIds[*segment]) {
             return &oids[last];
         }
     }
@@ -252,8 +252,9 @@ netsnmp_variable_list *getLastVarBinding(netsnmp_variable_list *varlist)
 
 /*****************************************************************************/
 /*
- * Utility function as this is called multiple times over the course of the
- * program. This sends a "new" Bulk request.
+ * Only called if a table is not fully retrieved. To get the rest of the SNMP
+ * Table a new BULK Request is generated with the last number of the last OID.
+ * This works only, because the interfaces (segments) have the same indices.
  *
  * hostContext_t *hostContext - pointer to the current hostcontext structure
  * netsnmp_variable_list *varlist - pointer to last oid of previous answer
@@ -278,7 +279,7 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
     }
 
     if (snmp_send(hostContext->session, request)) {
-        hostContext->reqids[segment] = request->reqid;
+        hostContext->requestIds[segment] = request->reqid;
         return 1;
     } else {
         snmp_perror("snmp_send");
@@ -290,23 +291,24 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
 
 /*****************************************************************************/
 /*
- * Called once a segment of a host is complete, sets the host request array
- * element of this segment to zero, denoting that this segment is finished and
- * checks if all segments of this host are finished. If so, decrement
- * activeHosts, denoting that all requests of this host are complete.
+ * Called once a segment of a host is complete. Sets the host request element
+ * of the current segment to zero, denoting that the segment is finished.
+ * Finally checks if all segments of the current host are finished. If so,
+ * decrement the activeHosts, denoting that all requests of the host are
+ * complete.
  *
  * long reqid - the request id found in the modem response
- * long *host_reqids - pointer to the array of request ids send to the modem
+ * long *requestIds - pointer to the array of request ids send to the modem
  * pass_t segment - completed segment
  *
  * returns int
  */
-void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
+void updateActiveHosts(long reqid, long *requestIds, pass_t segment)
 {
     static const long zero[FINISH] = { 0 };
-    host_reqids[segment] = 0;
+    requestIds[segment] = 0;
 
-    if (!memcmp(zero, host_reqids, sizeof(zero)))
+    if (!memcmp(zero, requestIds, sizeof(zero)))
         activeHosts--;
 }
 
@@ -324,7 +326,7 @@ void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
  *
  * returns int
  */
-int async_response(int operation, struct snmp_session *sp, int reqid, struct snmp_pdu *responseData, void *magic)
+int asyncResponse(int operation, struct snmp_session *sp, int reqid, struct snmp_pdu *responseData, void *magic)
 {
     pass_t segment;
     struct oid_s *oid;
@@ -341,9 +343,9 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
         return 1;
     }
 
-    oid = getSegmentLastOid(reqid, hostContext->reqids, &segment);
+    oid = getSegmentLastOid(reqid, hostContext->requestIds, &segment);
     if (segment == NON_REP) {
-        update_active_hosts(reqid, hostContext->reqids, segment);
+        updateActiveHosts(reqid, hostContext->requestIds, segment);
         return 1;
     }
 
@@ -352,7 +354,7 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
         oid -= itemCount[segment] - 1;
         sendNextBulkRequest(hostContext, varlist, oid);
     } else {
-        update_active_hosts(reqid, hostContext->reqids, segment);
+        updateActiveHosts(reqid, hostContext->requestIds, segment);
     }
 
     return 1;
@@ -361,7 +363,7 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
 /*****************************************************************************/
 /*
  * Initiates the asynchronous SNMP transfer, starting with the non-repeaters.
- * The async_response function gets called each time a packet is received.
+ * The asyncResponse function gets called each time a packet is received.
  * while loop handles async behavior.
  *
  * returns void
@@ -371,7 +373,7 @@ void asynchronous()
     pass_t i;
     MYSQL_ROW currentHost;
     hostContext_t *hostContext;
-    hostContext_t allHosts[hostCount]; /* one hostContext structure per Host in DB */
+    hostContext_t allHosts[hostCount];                  /* one hostContext structure per Host in DB */
 
     struct snmp_pdu *request[FINISH];
     struct oid_s *currentOid = oids;
@@ -399,7 +401,7 @@ void asynchronous()
         session.peername = strdup(currentHost[0]);
         session.community = (u_char*)strdup(currentHost[1]);
         session.community_len = strlen((const char*)session.community);
-        session.callback = async_response;
+        session.callback = asyncResponse;
         session.callback_magic = hostContext;
 
         if (!(hostContext->session = snmp_open(&session))) {
@@ -410,7 +412,7 @@ void asynchronous()
 
         for (i = 0; i < FINISH; i++) {
             if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request[i]))) {
-                hostContext->reqids[i] = newRequest->reqid;
+                hostContext->requestIds[i] = newRequest->reqid;
                 if (!i)
                     activeHosts++;
             } else {
