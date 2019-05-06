@@ -336,8 +336,10 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
         activeHosts--;
         return 1;
     }
-    if (!processResult(STAT_SUCCESS, hostContext, responseData))
+    if (!processResult(STAT_SUCCESS, hostContext, responseData)) {
+        activeHosts--;
         return 1;
+    }
 
     oid = getSegmentLastOid(reqid, hostContext->reqids, &segment);
     if (segment == NON_REP) {
