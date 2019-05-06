@@ -10,29 +10,20 @@ A huge chunk of the performance is achieved by using BULK requests and handling 
 We tested the performance of the poller and we got roughly 450k OIDs from over 5000 devices with 5s CPU usage and 20s overall execution time.
 
 ## Functionality
-This program retrieves a set of devices from the cacti database and queries all devices for the given OIDs. The Each vendor implements the SNMP protocol differently, so the program needs to check if all SNMP tables are fully received and if not, request another "batch".
+This program retrieves a set of devices from the cacti database and queries all devices for the given OIDs. Each vendor implements the SNMP protocol differently, so the program needs to check if all SNMP tables are fully received and if not, request another "batch".
 
 For our usecase the requested OIDs are divided into three segments:
  * non-repeaters for system information (non-table)
  * downstream
  * upstream
 
-For each host a separate session will be created. All requests are handled asynchronously and on response the next segment or the next batch of the current segment is requested.
+For each host a separate session will be created. All requests are handled asynchronously and on response the next batches are requested.
 
 The modem poller uses the NETSNMP C-library and is based on the NET-SNMP async demo. (hat tip to Niels Baggesen (Niels.Baggesen@uni-c.dk))
 
 ## How to use
 
-Replace the MySQL Credentials line 84 to 87 with your own
-
-```C
-    char host[] = "localhost";
-    char user[] = "cactiuser";
-    char pass[] = "secret";
-    char db[] = "cacti";
-```
-
-and compile the program with
+Compile the program with
 
 ```bash
 gcc -l netsnmp `mysql_config --cflags --libs` -o src/modempoller src/modempoller.c
@@ -43,4 +34,9 @@ make sure you have maketools(gcc) and the mysql-libraries installed.
 To install the MySQL libraries on CentOS 7 you can execute:
 ```bash
 yum install mysql-devel
+```
+
+If you are not using the default cacti credentails you can supply them via parameters:
+```bash
+./modempoller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
 ```
