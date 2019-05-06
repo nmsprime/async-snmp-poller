@@ -25,11 +25,11 @@ The modem poller uses the NETSNMP C-library and is based on the NET-SNMP async d
 
 Replace the MySQL Credentials line 84 to 87 with your own
 
-```C
+```C {.line-numbers} {highlight=18-30}
     char host[] = "localhost";
     char user[] = "cactiuser";
     char pass[] = "secret";
-    char db[] = "cacti";
+    char db[]   = "cacti";
 ```
 
 and compile the program with
