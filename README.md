@@ -36,7 +36,7 @@ To install the MySQL libraries on CentOS 7 you can execute:
 yum install mysql-devel
 ```
 
-If you are not using the default cacti credentails you can supply them via parameters:
+If you are not using the default cacti credentials you can supply them via parameters:
 ```bash
 ./modempoller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
 ```
