@@ -5,14 +5,14 @@
  * Hat tip to Niels Baggesen (Niels.Baggesen@uni-c.dk)
  *
  * This program retrieves a set of modems from the cacti database and queries
- * all modems for the given OIDs. The Each vendor implements the SNMP protocol
+ * all modems for the given OIDs. Each vendor implements the SNMP protocol
  * differently, so the program needs to check if all tables are correct and if
  * not, request another "batch".
  *
  * The requested OIDs are divided into three segments: non-repeaters for system
  * information, downstream and upstream. For each host a separate session will
  * be created. All requests are handled asynchronously and on response the next
- * segment or the next batch of the current segment is requested.
+ * batch of the current segment is requested.
  *
  * Christian Schramm (@cschra) and Ole Ernst (@olebowle), 2019
  *
@@ -43,27 +43,27 @@ struct oid_s {
     oid Oid[MAX_OID_LEN];
     size_t OidLen;
 } oids[] = {
-    { NON_REP, "1.3.6.1.2.1.1.1" }, /* SysDescr */
-    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.3" }, /* US Power (2.0) */
-    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.12" }, /* T3 Timeout */
-    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.13" }, /* T4 Timeout */
-    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.17" }, /* PreEq */
-    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.1.1.6" }, /* Power */
-    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.3" }, /* Corrected */
-    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.4" }, /* Uncorrectable */
-    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.5" }, /* SNR (2.0) */
-    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.6" }, /* Microreflections */
+    { NON_REP, "1.3.6.1.2.1.1.1" },                     /* SysDescr */
+    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.3" },        /* US Power (2.0) */
+    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.12" },       /* T3 Timeout */
+    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.13" },       /* T4 Timeout */
+    { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.17" },       /* PreEq */
+    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.1.1.6" },     /* Power */
+    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.3" },     /* Corrected */
+    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.4" },     /* Uncorrectable */
+    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.5" },     /* SNR (2.0) */
+    { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.6" },     /* Microreflections */
     { DOWNSTREAM, "1.3.6.1.4.1.4491.2.1.20.1.24.1.1" }, /* SNR (3.0) */
-    { UPSTREAM, "1.3.6.1.2.1.10.127.1.1.2.1.3" }, /* Bandwidth */
-    { UPSTREAM, "1.3.6.1.4.1.4491.2.1.20.1.2.1.1" }, /* Power (3.0) */
-    { UPSTREAM, "1.3.6.1.4.1.4491.2.1.20.1.2.1.9" }, /* Ranging Status */
+    { UPSTREAM, "1.3.6.1.2.1.10.127.1.1.2.1.3" },       /* Bandwidth */
+    { UPSTREAM, "1.3.6.1.4.1.4491.2.1.20.1.2.1.1" },    /* Power (3.0) */
+    { UPSTREAM, "1.3.6.1.4.1.4491.2.1.20.1.2.1.9" },    /* Ranging Status */
     { FINISH }
 };
 
 /* context structure to keep track of the current request */
 typedef struct hostContext {
     struct snmp_session *session; /* which host is currently processed */
-    long reqids[FINISH];
+    long reqids[FINISH]; /* the currently valid request id per segment */
     FILE *outputFile; /* to which file should the response be written to */
 } hostContext_t;
 
@@ -76,8 +76,13 @@ MYSQL_RES *result;
 /*
  * Connect to the cacti MySQL Database using the mysql-c high level API.
  *
- * The result of the query is stored in the global MYSQL_RES *result Variable
- * and the amount of hosts is stored in the global int hostCount Variable
+ * The result of the query is stored in the global MYSQL_RES *result variable
+ * and the amount of hosts is stored in the global int hostCount variable
+ *
+ * const char *hostname - MySQL hostname
+ * const char *username - database username
+ * const char *password - database password
+ * const char *database - MySQL database
  *
  * returns void
  */
@@ -111,6 +116,17 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
     mysql_close(con);
 }
 
+/*****************************************************************************/
+/*
+ * Identify the current segment (passed by reference) using the request id
+ * and return the last oid of this segment
+ *
+ * long reqid - the request id found in the modem response
+ * long *host_reqids - pointer to the array of request ids send to the modem
+ * pass_t segment - segment to be identified
+ *
+ * returns oid_s *
+ */
 struct oid_s *getSegmentLastOid(long reqid, long *host_reqids, pass_t *segment) {
     int last = -1;
 
@@ -129,7 +145,6 @@ struct oid_s *getSegmentLastOid(long reqid, long *host_reqids, pass_t *segment) 
 /*
  * This function sets the prerequisorities for the polling algorithm.
  * It does several things:
- * - Opens a Socket if on a windows machine
  * - Initializes the NET-SNMP library
  * - Sets Configuration for NET-SNMP
  * - Decodes OIDs and fills OID structure
@@ -238,14 +253,13 @@ netsnmp_variable_list *getLastVarBinding(netsnmp_variable_list *varlist)
 /*****************************************************************************/
 /*
  * Utility function as this is called multiple times over the course of the
- * program. This compiles the Request Package Payload.
+ * program. This sends a "new" Bulk request.
  *
- * struct snmp_pdu *request - request pdu
  * hostContext_t *hostContext - pointer to the current hostcontext structure
- * netsnmp_variable_list *varlist - empty variable list to fill
- * pass_t segment - determines which OIDs to add as request payload
+ * netsnmp_variable_list *varlist - pointer to last oid of previous answer
+ * struct oid_s *oid - pointer to first oid to send for the new request
  *
- * returns void
+ * returns int
  */
 int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varlist, struct oid_s *oid)
 {
@@ -274,6 +288,19 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
     return 0;
 }
 
+/*****************************************************************************/
+/*
+ * Called once a segment of a host is complete, sets the host request array
+ * element of this segment to zero, denoting that this segment is finished and
+ * checks if all segments of this host are finished. If so, decrement
+ * activeHosts, denoting that all requests of this host are complete.
+ *
+ * long reqid - the request id found in the modem response
+ * long *host_reqids - pointer to the array of request ids send to the modem
+ * pass_t segment - completed segment
+ *
+ * returns int
+ */
 void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
 {
     static const long zero[FINISH] = { 0 };
@@ -285,14 +312,13 @@ void update_active_hosts(long reqid, long *host_reqids, pass_t segment)
 
 /*****************************************************************************/
 /*
- * State machine that gets called asynchronously each time a new SNMP packet
+ * Function that gets called asynchronously each time a new SNMP packet
  * arrives. It checks whether the full table was retrieved and emits a new
- * SNMP request of either the next batch of the current segment or the next
- * segment.
+ * SNMP request of the next batch of the current segment.
  *
  * int operation - state of the received mesasa
  * struct snmp_session *sp - not used as we get session from context data
- * int reqid - request id - also unused
+ * int reqid - request id
  * struct snmp_pdu *responseData - response packet with data from modem
  * void *magic - magic pointer for context data
  *
@@ -334,7 +360,7 @@ int async_response(int operation, struct snmp_session *sp, int reqid, struct snm
 /*
  * Initiates the asynchronous SNMP transfer, starting with the non-repeaters.
  * The async_response function gets called each time a packet is received.
- * while loop handles asynch behavior.
+ * while loop handles async behavior.
  *
  * returns void
  */
