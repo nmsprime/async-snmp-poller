@@ -370,7 +370,7 @@ int asyncResponse(int operation, struct snmp_session *sp, int reqid, struct snmp
  */
 void asynchronous()
 {
-    pass_t i;
+    int i;
     MYSQL_ROW currentHost;
     hostContext_t *hostContext;
     hostContext_t allHosts[hostCount];                  /* one hostContext structure per Host in DB */
