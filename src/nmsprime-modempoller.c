@@ -60,7 +60,6 @@ struct oid_s {
     { FINISH }
 };
 
-
 typedef struct hostContext {                            /* context structure to keep track of the current request */
     struct snmp_session *session;                       /* which host is currently processed */
     long requestIds[FINISH];                            /* the currently valid request id per segment */
@@ -69,7 +68,7 @@ typedef struct hostContext {                            /* context structure to 
 
 /****************************** GLOBAL VARIABLES *****************************/
 int activeHosts, hostCount;
-int itemCount[FINISH] = {0};
+int itemCount[FINISH] = { 0 };
 MYSQL_RES *result;
 
 /********************************* FUNCTIONS *********************************/
@@ -127,7 +126,8 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
  *
  * returns oid_s *
  */
-struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment) {
+struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment)
+{
     int last = -1;
 
     for ((*segment) = 0; (*segment) < FINISH; (*segment)++) {
@@ -409,8 +409,8 @@ void asynchronous()
         session.retries = RETRIES;
         session.timeout = TIMEOUT;
         session.peername = strdup(currentHost[0]);
-        session.community = (u_char*)strdup(currentHost[1]);
-        session.community_len = strlen((const char*)session.community);
+        session.community = (u_char *)strdup(currentHost[1]);
+        session.community_len = strlen((const char *)session.community);
         session.callback = asyncResponse;
         session.callback_magic = hostContext;
 
