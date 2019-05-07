@@ -379,9 +379,13 @@ void asynchronous()
     struct oid_s *currentOid = oids;
 
     for (i = 0; i < FINISH; i++) {
-        request[i] = snmp_pdu_create(SNMP_MSG_GETBULK);
-        request[i]->non_repeaters = (i == NON_REP) ? itemCount[i] : 0;
-        request[i]->max_repetitions = (i == NON_REP) ? 0 : MAX_REPETITIONS;
+        if (i == NON_REP) {
+            request[i] = snmp_pdu_create(SNMP_MSG_GETNEXT);
+        } else {
+            request[i] = snmp_pdu_create(SNMP_MSG_GETBULK);
+            request[i]->non_repeaters = 0;
+            request[i]->max_repetitions = MAX_REPETITIONS;
+        }
     }
 
     while (currentOid->segment != FINISH) {
