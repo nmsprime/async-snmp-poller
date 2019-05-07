@@ -146,6 +146,7 @@ struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment) {
  * This function sets the prerequisorities for the polling algorithm.
  * It does several things:
  * - Initializes the NET-SNMP library
+ * - Set (increase) the limit for opened files (rlimit)
  * - Sets Configuration for NET-SNMP
  * - Decodes OIDs and fills OID structure
  * - Counts the number of OIDs for each segment
@@ -155,10 +156,15 @@ struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment) {
 void initialize()
 {
     struct oid_s *currentOid = oids;
-    struct rlimit lim = {1024*1024, 1024*1024};
+    struct rlimit lim = { 1024 * 1024, 1024 * 1024 };
     activeHosts = hostCount = 0;
 
-    setrlimit(RLIMIT_NOFILE, &lim);
+    if (setrlimit(RLIMIT_NOFILE, &lim)) {
+        perror("\nsetrlimit");
+        fprintf(stderr, "You need to have superuser privileges to set a new file limit!\n");
+        fprintf(stderr, "This program will most likely fail with more than 1000 Hosts!\n");
+        fprintf(stderr, "Continuing anyway...\n\n");
+    }
 
     /* initialize library */
     init_snmp("asynchapp");
