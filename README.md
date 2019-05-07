@@ -26,7 +26,7 @@ The modem poller uses the NETSNMP C-library and is based on the NET-SNMP async d
 Compile the program with
 
 ```bash
-gcc -l netsnmp `mysql_config --cflags --libs` -o src/modempoller src/modempoller.c
+gcc -l netsnmp `mysql_config --cflags --libs` -o src/poller src/poller.c
 ```
 
 make sure you have maketools(gcc) and the mysql-libraries installed.
@@ -38,5 +38,5 @@ yum install mysql-devel
 
 If you are not using the default cacti credentials you can supply them via parameters:
 ```bash
-./modempoller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
+./poller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
 ```
