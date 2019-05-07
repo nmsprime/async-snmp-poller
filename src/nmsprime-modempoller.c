@@ -73,50 +73,6 @@ MYSQL_RES *result;
 
 /********************************* FUNCTIONS *********************************/
 /*
- * Connect to the cacti MySQL Database using the mysql-c high level API.
- *
- * The result of the query is stored in the global MYSQL_RES *result variable
- * and the amount of hosts is stored in the global int hostCount variable
- *
- * const char *hostname - MySQL hostname
- * const char *username - database username
- * const char *password - database password
- * const char *database - MySQL database
- *
- * returns void
- */
-void connectToMySql(const char *hostname, const char *username, const char *password, const char *database)
-{
-    MYSQL *con = mysql_init(NULL);
-
-    if (!con) {
-        fprintf(stderr, "%s\n", mysql_error(con));
-        exit(1);
-    }
-
-    if (!mysql_real_connect(con,
-                            hostname ? hostname : "localhost",
-                            username ? username : "cactiuser",
-                            password ? password : "cactiuser",
-                            database ? database : "cacti",
-                            0, NULL, 0)) {
-        fprintf(stderr, "%s\n", mysql_error(con));
-        mysql_close(con);
-        exit(1);
-    }
-
-    if (mysql_query(con, "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%' ORDER BY hostname"))
-        fprintf(stderr, "%s\n", mysql_error(con));
-
-    result = mysql_store_result(con);
-
-    hostCount = mysql_num_rows(result);
-
-    mysql_close(con);
-}
-
-/*****************************************************************************/
-/*
  * Identify the current segment (passed by reference) using the request id and
  * return the last oid of this segment
  *
@@ -139,100 +95,6 @@ struct oid_s *getSegmentLastOid(long reqid, long *requestIds, pass_t *segment)
     }
 
     return NULL;
-}
-
-/*****************************************************************************/
-/*
- * This function sets the prerequisorities for the polling algorithm.
- * It does several things:
- * - Initializes the NET-SNMP library
- * - Set (increase) the limit for opened files (rlimit)
- * - Sets Configuration for NET-SNMP
- * - Decodes OIDs and fills OID structure
- * - Counts the number of OIDs for each segment
- *
- * returns void
- */
-void initialize()
-{
-    struct oid_s *currentOid = oids;
-    struct rlimit lim = { 1024 * 1024, 1024 * 1024 };
-    activeHosts = hostCount = 0;
-
-    if (setrlimit(RLIMIT_NOFILE, &lim)) {
-        perror("\nsetrlimit");
-        fprintf(stderr, "You need to have superuser privileges to set a new file limit!\n");
-        fprintf(stderr, "This program will most likely fail with more than 1000 Hosts!\n");
-        fprintf(stderr, "Continuing anyway...\n\n");
-    }
-
-    /* initialize library */
-    init_snmp("asynchapp");
-    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_OID_OUTPUT_FORMAT, NETSNMP_OID_OUTPUT_NUMERIC);
-    netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_QUICK_PRINT, 1);
-    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_HEX_OUTPUT_LENGTH, 0);
-
-    /* parse the oids */
-    while (currentOid->segment < FINISH) {
-        currentOid->OidLen = MAX_OID_LEN;
-        if (!read_objid(currentOid->Name, currentOid->Oid, &currentOid->OidLen)) {
-            snmp_perror("read_objid");
-            printf("Could not Parse OID: %s\n", currentOid->Name);
-            exit(1);
-        }
-
-        itemCount[currentOid->segment]++;
-        currentOid++;
-    }
-}
-
-/*****************************************************************************/
-/*
- * Print the response into a File inside the current working directory.
- *
- * int status - state of the Response
- * hostContext_t *hostContext - pointer to the current hostcontext structure
- * struct snmp_pdu *responseData
- *
- * returns int
- */
-int processResult(int status, hostContext_t *hostContext, struct snmp_pdu *responseData)
-{
-    char buf[1024];
-    struct variable_list *currentVariable;
-    int ix;
-
-    switch (status) {
-    case STAT_SUCCESS:
-        currentVariable = responseData->variables;
-        if (responseData->errstat == SNMP_ERR_NOERROR) {
-            while (currentVariable) {
-                snprint_variable(buf, sizeof(buf), currentVariable->name, currentVariable->name_length, currentVariable);
-                fprintf(hostContext->outputFile, "%s\n", buf);
-                currentVariable = currentVariable->next_variable;
-            }
-        } else {
-            for (ix = 1; currentVariable && ix != responseData->errindex;
-                 currentVariable = currentVariable->next_variable, ix++);
-
-            if (currentVariable)
-                snprint_objid(buf, sizeof(buf), currentVariable->name, currentVariable->name_length);
-            else
-                strcpy(buf, "(none)");
-
-            fprintf(hostContext->outputFile, "ERROR: %s: %s: %s\n", hostContext->session->peername, buf,
-                    snmp_errstring(responseData->errstat));
-        }
-        return 1;
-    case STAT_TIMEOUT:
-        fprintf(stdout, "%s: Timeout\n", hostContext->session->peername);
-        return 0;
-    case STAT_ERROR:
-        snmp_perror(hostContext->session->peername);
-        return 0;
-    }
-
-    return 0;
 }
 
 /*****************************************************************************/
@@ -316,6 +178,144 @@ void updateActiveHosts(long reqid, long *requestIds, pass_t segment)
 
     if (!memcmp(zero, requestIds, sizeof(zero)))
         activeHosts--;
+}
+
+/*****************************************************************************/
+/*
+ * Connect to the cacti MySQL Database using the mysql-c high level API.
+ *
+ * The result of the query is stored in the global MYSQL_RES *result variable
+ * and the amount of hosts is stored in the global int hostCount variable
+ *
+ * const char *hostname - MySQL hostname
+ * const char *username - database username
+ * const char *password - database password
+ * const char *database - MySQL database
+ *
+ * returns void
+ */
+void connectToMySql(const char *hostname, const char *username, const char *password, const char *database)
+{
+    MYSQL *con = mysql_init(NULL);
+
+    if (!con) {
+        fprintf(stderr, "%s\n", mysql_error(con));
+        exit(1);
+    }
+
+    if (!mysql_real_connect(con,
+                            hostname ? hostname : "localhost",
+                            username ? username : "cactiuser",
+                            password ? password : "cactiuser",
+                            database ? database : "cacti",
+                            0, NULL, 0)) {
+        fprintf(stderr, "%s\n", mysql_error(con));
+        mysql_close(con);
+        exit(1);
+    }
+
+    if (mysql_query(con, "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%' ORDER BY hostname"))
+        fprintf(stderr, "%s\n", mysql_error(con));
+
+    result = mysql_store_result(con);
+
+    hostCount = mysql_num_rows(result);
+
+    mysql_close(con);
+}
+
+/*****************************************************************************/
+/*
+ * Print the response into a File inside the current working directory.
+ *
+ * int status - state of the Response
+ * hostContext_t *hostContext - pointer to the current hostcontext structure
+ * struct snmp_pdu *responseData
+ *
+ * returns int
+ */
+int processResult(int status, hostContext_t *hostContext, struct snmp_pdu *responseData)
+{
+    char buf[1024];
+    struct variable_list *currentVariable;
+    int ix;
+
+    switch (status) {
+    case STAT_SUCCESS:
+        currentVariable = responseData->variables;
+        if (responseData->errstat == SNMP_ERR_NOERROR) {
+            while (currentVariable) {
+                snprint_variable(buf, sizeof(buf), currentVariable->name, currentVariable->name_length, currentVariable);
+                fprintf(hostContext->outputFile, "%s\n", buf);
+                currentVariable = currentVariable->next_variable;
+            }
+        } else {
+            for (ix = 1; currentVariable && ix != responseData->errindex;
+                 currentVariable = currentVariable->next_variable, ix++);
+
+            if (currentVariable)
+                snprint_objid(buf, sizeof(buf), currentVariable->name, currentVariable->name_length);
+            else
+                strcpy(buf, "(none)");
+
+            fprintf(hostContext->outputFile, "ERROR: %s: %s: %s\n", hostContext->session->peername, buf,
+                    snmp_errstring(responseData->errstat));
+        }
+        return 1;
+    case STAT_TIMEOUT:
+        fprintf(stdout, "%s: Timeout\n", hostContext->session->peername);
+        return 0;
+    case STAT_ERROR:
+        snmp_perror(hostContext->session->peername);
+        return 0;
+    }
+
+    return 0;
+}
+
+/*****************************************************************************/
+/*
+ * This function sets the prerequisorities for the polling algorithm.
+ * It does several things:
+ * - Initializes the NET-SNMP library
+ * - Set (increase) the limit for opened files (rlimit)
+ * - Sets Configuration for NET-SNMP
+ * - Decodes OIDs and fills OID structure
+ * - Counts the number of OIDs for each segment
+ *
+ * returns void
+ */
+void initialize()
+{
+    struct oid_s *currentOid = oids;
+    struct rlimit lim = { 1024 * 1024, 1024 * 1024 };
+    activeHosts = hostCount = 0;
+
+    if (setrlimit(RLIMIT_NOFILE, &lim)) {
+        perror("\nsetrlimit");
+        fprintf(stderr, "You need to have superuser privileges to set a new file limit!\n");
+        fprintf(stderr, "This program will most likely fail with more than 1000 Hosts!\n");
+        fprintf(stderr, "Continuing anyway...\n\n");
+    }
+
+    /* initialize library */
+    init_snmp("asynchapp");
+    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_OID_OUTPUT_FORMAT, NETSNMP_OID_OUTPUT_NUMERIC);
+    netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_QUICK_PRINT, 1);
+    netsnmp_ds_set_int(NETSNMP_DS_LIBRARY_ID, NETSNMP_DS_LIB_HEX_OUTPUT_LENGTH, 0);
+
+    /* parse the oids */
+    while (currentOid->segment < FINISH) {
+        currentOid->OidLen = MAX_OID_LEN;
+        if (!read_objid(currentOid->Name, currentOid->Oid, &currentOid->OidLen)) {
+            snmp_perror("read_objid");
+            printf("Could not Parse OID: %s\n", currentOid->Name);
+            exit(1);
+        }
+
+        itemCount[currentOid->segment]++;
+        currentOid++;
+    }
 }
 
 /*****************************************************************************/
@@ -464,18 +464,6 @@ void asynchronous()
 
 /*****************************************************************************/
 /*
- * close all file descriptors and free the MySQL result
- *
- * returns void
- */
-void cleanup()
-{
-    mysql_free_result(result);
-    fcloseall();
-}
-
-/*****************************************************************************/
-/*
  * main function
  *
  * returns int
@@ -517,7 +505,8 @@ int main(int argc, char **argv)
     initialize();
     connectToMySql(hostname, username, password, database);
     asynchronous();
-    cleanup();
+    mysql_free_result(result);
+    fcloseall();
 
     return 0;
 }
