@@ -1,7 +1,7 @@
 # NMS Prime async modempoller
 
 ## Description
-This **asynchronous snmp poller** solves the issue with Cacti when monitoring several thousand devices. Cacti produces a massive CPU load and takes a long time to collect its monitoring data by using hundreds of concurrent php workers which handle each a small batch of devices sequentially. This blocks the CPU and scales pretty poorly.
+This **asynchronous snmp poller** solves an issue with Cacti, when monitoring several thousand devices. Cacti produces a massive CPU load and takes a long time to collect its monitoring data by using hundreds of concurrent php workers, which handle each a small batch of devices sequentially. This blocks the CPU and scales pretty poorly.
 
 By switching to the native C implementation, this program is highly efficient and depending on the devices in your network you can query easily over 2 Million OIDs per minute. It is especially efficient if you have to query all devices for the same OIDs (a lot of similar devices). The required data is retrieved from a **MySQL database** with the **MySQL C API**.
 
@@ -17,11 +17,17 @@ For our usecase the requested OIDs are divided into three segments:
  * downstream
  * upstream
 
-For each host a separate session will be created. Fer each segment the requests will be sent out and the responses are handled asynchronously.
+For each host a separate session will be created. All requests are handled asynchronously and on response the next batch of the current segment is requested.
 
 The modem poller uses the NETSNMP C-library and is based on the NET-SNMP async demo. (hat tip to Niels Baggesen (Niels.Baggesen@uni-c.dk))
 
 ## How to use
+
+The build requires: `gcc net-snmp-devel mysql-devel`. To install those on CentOS, execute
+
+```bash
+yum install gcc net-snmp-devel mysql-devel
+```
 
 Compile the program with
 
@@ -29,14 +35,8 @@ Compile the program with
 gcc -l netsnmp `mysql_config --cflags --libs` -o src/nmsprime-modempoller src/nmsprime-modempoller.c
 ```
 
-make sure you have maketools(gcc) and the mysql-libraries installed.
-
-To install the MySQL libraries on CentOS 7 you can execute:
-```bash
-yum install mysql-devel
-```
-
 If you are not using the default cacti credentials you can supply them via parameters:
+
 ```bash
 ./nmsprime-modempoller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
 ```
