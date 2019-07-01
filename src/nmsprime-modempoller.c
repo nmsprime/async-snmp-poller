@@ -48,6 +48,8 @@ struct oid_s {
     { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.12" },       /* T3 Timeout */
     { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.13" },       /* T4 Timeout */
     { NON_REP, "1.3.6.1.2.1.10.127.1.2.2.1.17" },       /* PreEq */
+    { NON_REP, "1.3.6.1.2.1.31.1.1.1.6.1" },            /* ifHCInOctets (docsCableMaclayer) */
+    { NON_REP, "1.3.6.1.2.1.31.1.1.1.10.1" },           /* ifHCOutOctets (docsCableMaclayer) */
     { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.1.1.6" },     /* Power */
     { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.3" },     /* Corrected */
     { DOWNSTREAM, "1.3.6.1.2.1.10.127.1.1.4.1.4" },     /* Uncorrectable */
