@@ -1,4 +1,4 @@
-Name: nmsprime-modempoller
+Name: modempoller-nmsprime
 Version: 0.0.1
 Release: 1
 Summary: A highly efficient modem snmp poller

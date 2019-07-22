@@ -32,11 +32,11 @@ yum install gcc net-snmp-devel mysql-devel
 Compile the program with
 
 ```bash
-gcc -l netsnmp `mysql_config --cflags --libs` -o src/nmsprime-modempoller src/nmsprime-modempoller.c
+gcc -l netsnmp `mysql_config --cflags --libs` -o src/modempoller-nmsprime src/modempoller-nmsprime.c
 ```
 
 If you are not using the default cacti credentials you can supply them via parameters:
 
 ```bash
-./nmsprime-modempoller [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
+./modempoller-nmsprime [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
 ```
