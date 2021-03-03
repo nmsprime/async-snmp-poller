@@ -285,7 +285,6 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
  */
 int processResult(int status, hostContext_t *hostContext, struct snmp_pdu *responseData)
 {
-    char buf[1024];
     struct variable_list *currentVariable;
     int ix;
 
@@ -294,22 +293,19 @@ int processResult(int status, hostContext_t *hostContext, struct snmp_pdu *respo
         currentVariable = responseData->variables;
         if (responseData->errstat == SNMP_ERR_NOERROR) {
             while (currentVariable) {
-                snprint_variable(buf, sizeof(buf), currentVariable->name, currentVariable->name_length, currentVariable);
-                fprintf(hostContext->outputFile, "%s\n", buf);
+                fprint_variable(hostContext->outputFile, currentVariable->name, currentVariable->name_length, currentVariable);
                 currentVariable = currentVariable->next_variable;
             }
         } else {
             for (ix = 1; currentVariable && ix != responseData->errindex;
                  currentVariable = currentVariable->next_variable, ix++);
 
+            fprintf(hostContext->outputFile, "ERROR: %s: ", hostContext->session->peername);
             if (currentVariable) {
-                snprint_objid(buf, sizeof(buf), currentVariable->name, currentVariable->name_length);
-            } else {
-                strcpy(buf, "(none)");
+                fprint_objid(hostContext->outputFile, currentVariable->name, currentVariable->name_length);
             }
+            fprintf(hostContext->outputFile, ": %s\n", snmp_errstring(responseData->errstat));
 
-            fprintf(hostContext->outputFile, "ERROR: %s: %s: %s\n", hostContext->session->peername, buf,
-                    snmp_errstring(responseData->errstat));
         }
         return 1;
     case STAT_TIMEOUT:
