@@ -460,8 +460,8 @@ void asynchronous()
         session.version = SNMP_VERSION_2c;
         session.retries = RETRIES;
         session.timeout = TIMEOUT * 1000000;
-        session.peername = strdup(currentHost[0]);
-        session.community = (u_char *)strdup(currentHost[1]);
+        session.peername = currentHost[0];
+        session.community = (u_char *)currentHost[1];
         session.community_len = strlen((const char *)session.community);
         session.callback = asyncResponse;
         session.callback_magic = hostContext;
