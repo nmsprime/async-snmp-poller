@@ -526,11 +526,7 @@ void asynchronous()
         snmp_free_pdu(request[i]);
     }
 
-    for (hostContext = allHosts, i = 0; i < hostCount; hostContext++, i++) {
-        if (hostContext->session) {
-            snmp_close(hostContext->session);
-        }
-    }
+    snmp_shutdown("asynchapp");
 }
 
 /*****************************************************************************/
