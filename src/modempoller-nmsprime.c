@@ -242,7 +242,7 @@ void updateActiveHosts(long reqid, long *requestIds, pass_t segment)
  *
  * returns void
  */
-void connectToMySql(const char *hostname, const char *username, const char *password, const char *database, const char *query)
+void connectToMySql(const char *hostname, const char *username, const char *password, const char *database, char *query)
 {
     MYSQL *con = mysql_init(NULL);
 
@@ -262,7 +262,7 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
         exit(1);
     }
 
-    if (mysql_query(con, query ? query : "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%' ORDER BY hostname")) {
+    if (mysql_query(con, query)) {
         fprintf(stderr, "%s\n", mysql_error(con));
     }
 
@@ -538,10 +538,11 @@ void asynchronous()
 int main(int argc, char **argv)
 {
     int c, analysis = 0;
-    const char *database = NULL, *hostname = NULL, *query = NULL, *password = NULL, *username = NULL;
-    static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-q query] [-u cacti_db_username]\n";
+    const char *database = NULL, *hostname = NULL, *modem = NULL, *password = NULL, *username = NULL;
+    static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d cacti_db_name] [-h hostname] [-m modem-id] [-p cacti_db_password] [-u cacti_db_username]\n";
+    char query[81];
 
-    while ((c = getopt(argc, argv, "ad:h:p:q:u:")) != -1) {
+    while ((c = getopt(argc, argv, "ad:h:m:p:u:")) != -1) {
         switch (c) {
         case 'a':
             analysis = 1;
@@ -552,17 +553,17 @@ int main(int argc, char **argv)
         case 'h':
             hostname = optarg;
             break;
+        case 'm':
+            modem = optarg;
+            break;
         case 'p':
             password = optarg;
-            break;
-        case 'q':
-            query = optarg;
             break;
         case 'u':
             username = optarg;
             break;
         case '?':
-            if (optopt == 'd' || optopt == 'h' || optopt == 'p' || optopt == 'q' || optopt == 'u') {
+            if (optopt == 'd' || optopt == 'h' || optopt == 'm' || optopt == 'p' || optopt == 'u') {
                 fprintf(stderr, "Option -%c requires an argument.\n", optopt);
             } else if (isprint(optopt)) {
                 fprintf(stderr, "Unknown option `-%c'.\n", optopt);
@@ -578,6 +579,13 @@ int main(int argc, char **argv)
     }
 
     oids = analysis ? oids_single : oids_multiple;
+
+    if (modem) {
+        uint32_t modemId = strtoul(modem, NULL, 10);
+        snprintf(query, sizeof(query), "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%u%%';", modemId);
+    } else {
+        snprintf(query, sizeof(query), "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%%';");
+    }
 
     initialize();
     connectToMySql(hostname, username, password, database, query);
