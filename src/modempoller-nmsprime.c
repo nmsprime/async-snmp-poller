@@ -20,7 +20,6 @@
 
 /********************************** DEFINES **********************************/
 #define _GNU_SOURCE
-#define MAX_REPETITIONS 9
 #define RETRIES 3
 #define TIMEOUT 5
 
@@ -43,6 +42,8 @@ typedef enum pass {
     DOWNSUB31,
     FINISH
 } pass_t;
+
+long repetitions[FINISH] = {0, 9, 5, 3, 3, 33};
 
 /* a list of variables to query for */
 typedef struct oid_s {
@@ -184,7 +185,7 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
 
     request = snmp_pdu_create(SNMP_MSG_GETBULK);
     request->non_repeaters = 0;
-    request->max_repetitions = MAX_REPETITIONS;
+    request->max_repetitions = repetitions[segment];
 
     while (oid->segment == segment) {
         oid->Oid[oid->OidLen] = varlist->name[varlist->name_length - 1];
@@ -442,7 +443,7 @@ void asynchronous()
         } else {
             request[i] = snmp_pdu_create(SNMP_MSG_GETBULK);
             request[i]->non_repeaters = 0;
-            request[i]->max_repetitions = MAX_REPETITIONS;
+            request[i]->max_repetitions = repetitions[i];
         }
     }
 
