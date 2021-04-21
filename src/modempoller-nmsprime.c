@@ -14,7 +14,7 @@
  * be created. All requests are handled asynchronously and on response the next
  * batch of the current segment is requested.
  *
- * Christian Schramm (@cschra) and Ole Ernst (@olebowle), 2019
+ * Christian Schramm (@cschra) and Ole Ernst (@olebowle), 2021
  *
  *****************************************************************************/
 
@@ -541,7 +541,7 @@ int main(int argc, char **argv)
     int c, analysis = 0;
     const char *database = NULL, *hostname = NULL, *modem = NULL, *password = NULL, *username = NULL;
     static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d cacti_db_name] [-h hostname] [-m modem-id] [-p cacti_db_password] [-u cacti_db_username]\n";
-    char query[81];
+    char query[84];
 
     while ((c = getopt(argc, argv, "ad:h:m:p:u:")) != -1) {
         switch (c) {
@@ -583,9 +583,9 @@ int main(int argc, char **argv)
 
     if (modem) {
         uint32_t modemId = strtoul(modem, NULL, 10);
-        snprintf(query, sizeof(query), "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%u%%';", modemId);
+        snprintf(query, sizeof(query), "SELECT description, snmp_community FROM host WHERE hostname LIKE 'cm-%u%%';", modemId);
     } else {
-        snprintf(query, sizeof(query), "SELECT hostname, snmp_community FROM host WHERE hostname LIKE 'cm-%%';");
+        snprintf(query, sizeof(query), "SELECT description, snmp_community FROM host WHERE hostname LIKE 'cm-%%';");
     }
 
     initialize();
