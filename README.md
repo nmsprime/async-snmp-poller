@@ -10,7 +10,7 @@ A huge chunk of the performance is achieved by using **SNMP BULK Requests** and 
 We tested the performance of the poller and we got roughly 450k OIDs from over 5000 devices with 5s CPU usage and 20s overall execution time.
 
 ## Functionality
-This program retrieves a set of devices from the **Cacti MYSQL database** and queries all devices for the given OIDs. Each vendor implements the SNMP protocol differently, so the program needs to check if all SNMP tables are fully received and if not, requesting another "batch".
+This program retrieves a set of devices from the **NMS Prime MYSQL database** and queries all devices for the given OIDs. Each vendor implements the SNMP protocol differently, so the program needs to check if all SNMP tables are fully received and if not, requesting another "batch".
 
 For our usecase the requested OIDs are divided into three segments:
  * non-repeaters for system information (non-table)
@@ -35,8 +35,8 @@ Compile the program with
 gcc -l netsnmp `mysql_config --cflags --libs` -o src/modempoller-nmsprime src/modempoller-nmsprime.c
 ```
 
-If you are not using the default cacti credentials you can supply them via parameters:
+If you are not using the default nmsprime credentials you can supply them via parameters:
 
 ```bash
-./modempoller-nmsprime [-d cacti_db_name] [-h hostname] [-p cacti_db_password] [-u cacti_db_username]
+./modempoller-nmsprime [-a (to be used for single modem analysis view)] [-d nmsprime_db_name] [-h hostname] [-m modem-id] [-p nmsprime_db_password] [-u nmsprime_db_username]
 ```
