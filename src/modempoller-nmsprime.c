@@ -231,7 +231,7 @@ void updateActiveHosts(long reqid, long *requestIds, pass_t segment)
 
 /*****************************************************************************/
 /*
- * Connect to the cacti MySQL Database using the mysql-c high level API.
+ * Connect to the nmsprime MySQL Database using the mysql-c high level API.
  *
  * The result of the query is stored in the global MYSQL_RES *result variable
  * and the amount of hosts is stored in the global int hostCount variable
@@ -254,9 +254,9 @@ void connectToMySql(const char *hostname, const char *username, const char *pass
 
     if (! mysql_real_connect(con,
                             hostname ? hostname : "localhost",
-                            username ? username : "cactiuser",
-                            password ? password : "cactiuser",
-                            database ? database : "cacti",
+                            username ? username : "nmsprime",
+                            password ? password : "nmsprime",
+                            database ? database : "nmsprime",
                             0, NULL, 0)) {
         fprintf(stderr, "%s\n", mysql_error(con));
         mysql_close(con);
@@ -471,7 +471,8 @@ void asynchronous()
             snmp_perror("snmp_open");
             continue;
         }
-        hostContext->outputFile = (oids == oids_single) ? stdout : fopen(session.peername, "w");
+        hostContext->outputFile = (oids == oids_single) ? stdout : fopen(currentHost[2], "w");
+        fprintf(hostContext->outputFile, "ipv4:%s\n", currentHost[0]);
 
         for (i = NON_REP; i < FINISH; i++) {
             if (! request[i]) {
@@ -540,8 +541,8 @@ int main(int argc, char **argv)
 {
     int c, analysis = 0;
     const char *database = NULL, *hostname = NULL, *modem = NULL, *password = NULL, *username = NULL;
-    static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d cacti_db_name] [-h hostname] [-m modem-id] [-p cacti_db_password] [-u cacti_db_username]\n";
-    char query[84];
+    static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d nmsprime_db_name] [-h hostname] [-m modem-id] [-p nmsprime_db_password] [-u nmsprime_db_username]\n";
+    char query[290];
 
     while ((c = getopt(argc, argv, "ad:h:m:p:u:")) != -1) {
         switch (c) {
@@ -583,9 +584,9 @@ int main(int argc, char **argv)
 
     if (modem) {
         uint32_t modemId = strtoul(modem, NULL, 10);
-        snprintf(query, sizeof(query), "SELECT description, snmp_community FROM host WHERE hostname LIKE 'cm-%u%%';", modemId);
+        snprintf(query, sizeof(query), "SELECT COALESCE(INET_NTOA(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
     } else {
-        snprintf(query, sizeof(query), "SELECT description, snmp_community FROM host WHERE hostname LIKE 'cm-%%';");
+        snprintf(query, sizeof(query), "SELECT COALESCE(INET_NTOA(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
     }
 
     initialize();
