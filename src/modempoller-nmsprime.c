@@ -178,8 +178,10 @@ netsnmp_variable_list *getLastVarBinding(netsnmp_variable_list *varlist)
  *
  * returns int
  */
-int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varlist, struct oid_s *oid)
+int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varlist, struct oid_s *oid, int prefix)
 {
+    int i;
+    size_t len;
     struct snmp_pdu *request;
     pass_t segment = oid->segment;
 
@@ -188,8 +190,11 @@ int sendNextBulkRequest(hostContext_t *hostContext, netsnmp_variable_list *varli
     request->max_repetitions = repetitions[segment];
 
     while (oid->segment == segment) {
-        oid->Oid[oid->OidLen] = varlist->name[varlist->name_length - 1];
-        snmp_add_null_var(request, oid->Oid, oid->OidLen + 1);
+        len = oid->OidLen;
+        for (i = prefix; i < varlist->name_length; i++) {
+            oid->Oid[len++] = varlist->name[i];
+        }
+        snmp_add_null_var(request, oid->Oid, len);
 
         oid++;
     }
@@ -382,6 +387,7 @@ void initialize()
  */
 int asyncResponse(int operation, struct snmp_session *sp, int reqid, struct snmp_pdu *responseData, void *magic)
 {
+    int prefix;
     pass_t segment;
     struct oid_s *oid;
     netsnmp_variable_list *varlist;
@@ -404,9 +410,11 @@ int asyncResponse(int operation, struct snmp_session *sp, int reqid, struct snmp
     }
 
     varlist = getLastVarBinding(responseData->variables);
+    prefix = netsnmp_oid_find_prefix(varlist->name, varlist->name_length, oid->Oid, oid->OidLen);
+
     if (! memcmp(oid->Oid, varlist->name, oid->OidLen * sizeof(oid))) {
         oid -= itemCount[segment] - 1;
-        sendNextBulkRequest(hostContext, varlist, oid);
+        sendNextBulkRequest(hostContext, varlist, oid, prefix);
     } else {
         updateActiveHosts(reqid, hostContext->requestIds, segment);
     }
