@@ -40,10 +40,11 @@ typedef enum pass {
     DOWNSTREAM31,
     UPSTREAM31,
     DOWNSUB31,
+    PROFILE_STATS31,
     FINISH
 } pass_t;
 
-long repetitions[FINISH] = {0, 9, 5, 3, 3, 33};
+long repetitions[FINISH] = {0, 9, 5, 3, 3, 33, 5};
 
 /* a list of variables to query for */
 typedef struct oid_s {
@@ -71,6 +72,8 @@ oid_t oids_single[] = {
     { UPSTREAM30, "1.3.6.1.2.1.10.127.1.1.2.1.3" },       /* Width/MHz */
     { UPSTREAM30, "1.3.6.1.4.1.4491.2.1.20.1.2.1.1" },    /* Power/dBmV */
     { UPSTREAM30, "1.3.6.1.4.1.4491.2.1.20.1.2.1.9" },    /* RangingStatus */
+    { DOWNSTREAM31, "1.3.6.1.4.1.4491.2.1.27.1.2.5.1.3" },/* avg RxMER */
+    { DOWNSTREAM31, "1.3.6.1.4.1.4491.2.1.27.1.2.5.1.4" },/* RxMER std dev */
     { DOWNSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.9.1.3" },
     { DOWNSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.9.1.4" },
     { DOWNSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.9.1.5" },
@@ -79,8 +82,14 @@ oid_t oids_single[] = {
     { UPSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.13.1.3" },
     { UPSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.13.1.4" },
     { UPSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.13.1.6" },
-    { UPSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.13.1.10" },
+    { UPSTREAM31, "1.3.6.1.4.1.4491.2.1.28.1.13.1.10" },	/* RxPow */
+    { DOWNSUB31, "1.3.6.1.4.1.4491.2.1.28.1.11.1.2" }, 	/* OFDM center frequency */
     { DOWNSUB31, "1.3.6.1.4.1.4491.2.1.28.1.11.1.3" },
+    { PROFILE_STATS31, "1.3.6.1.4.1.4491.2.1.28.1.10.1.3" }, 	/* total CW */
+    { PROFILE_STATS31, "1.3.6.1.4.1.4491.2.1.28.1.10.1.4" }, 	/* cCWE */
+    { PROFILE_STATS31, "1.3.6.1.4.1.4491.2.1.28.1.10.1.5" }, 	/* uCWE */
+    { PROFILE_STATS31, "1.3.6.1.4.1.4491.2.1.28.1.10.1.6" }, 	/* received bytes */
+    { PROFILE_STATS31, "1.3.6.1.4.1.4491.2.1.28.1.10.1.7" }, 	/* received unicast bytes */
     { FINISH }
 };
 
