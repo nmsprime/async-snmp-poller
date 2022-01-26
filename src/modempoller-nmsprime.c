@@ -20,8 +20,8 @@
 
 /********************************** DEFINES **********************************/
 #define _GNU_SOURCE
-#define RETRIES 1
-#define TIMEOUT 3
+#define RETRIES 3
+#define TIMEOUT 5
 
 /********************************* INCLUDES **********************************/
 #include <ctype.h>
