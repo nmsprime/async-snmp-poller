@@ -25,7 +25,7 @@
 
 /********************************* INCLUDES **********************************/
 #include <ctype.h>
-#include <mysql.h>
+#include <libpq-fe.h>
 #include <sys/resource.h>
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -123,9 +123,8 @@ typedef struct hostContext {                            /* context structure to 
 } hostContext_t;
 
 /****************************** GLOBAL VARIABLES *****************************/
-int activeHosts, hostCount;
+int activeHosts;
 int itemCount[FINISH] = { 0 };
-MYSQL_RES *result;
 
 /********************************* FUNCTIONS *********************************/
 /*
@@ -245,47 +244,40 @@ void updateActiveHosts(long reqid, long *requestIds, pass_t segment)
 
 /*****************************************************************************/
 /*
- * Connect to the nmsprime MySQL Database using the mysql-c high level API.
+ * Connect to the nmsprime SQL database
  *
- * The result of the query is stored in the global MYSQL_RES *result variable
- * and the amount of hosts is stored in the global int hostCount variable
- *
- * const char *hostname - MySQL hostname
+ * const char *hostname - SQL hostname
  * const char *username - database username
  * const char *password - database password
- * const char *database - MySQL database
+ * const char *database - SQL database
  *
- * returns void
+ * returns PGconn*
  */
-void connectToMySql(const char *hostname, const char *username, const char *password, const char *database, char *query)
+PGconn* connectToSql(const char *hostname, const char *username, const char *password, const char *database)
 {
-    MYSQL *con = mysql_init(NULL);
+    const char *keywords[] = {
+        "host",
+        "dbname",
+        "user",
+        "password",
+        NULL
+    };
+    const char *values[] = {
+        hostname ? hostname : "localhost",
+        database ? database : "nmsprime",
+        username ? username : "nmsprime",
+        password ? password : "nmsprime",
+        NULL
+    };
 
-    if (! con) {
-        fprintf(stderr, "%s\n", mysql_error(con));
+    PGconn* conn = PQconnectdbParams(keywords, values, 0);
+    if (PQstatus(conn) == CONNECTION_BAD) {
+        fprintf(stderr, "Connection to database failed: %s\n", PQerrorMessage(conn));
+        PQfinish(conn);
         exit(1);
     }
 
-    if (! mysql_real_connect(con,
-                            hostname ? hostname : "localhost",
-                            username ? username : "nmsprime",
-                            password ? password : "nmsprime",
-                            database ? database : "nmsprime",
-                            0, NULL, 0)) {
-        fprintf(stderr, "%s\n", mysql_error(con));
-        mysql_close(con);
-        exit(1);
-    }
-
-    if (mysql_query(con, query)) {
-        fprintf(stderr, "%s\n", mysql_error(con));
-    }
-
-    result = mysql_store_result(con);
-
-    hostCount = mysql_num_rows(result);
-
-    mysql_close(con);
+    return conn;
 }
 
 /*****************************************************************************/
@@ -350,7 +342,7 @@ void initialize()
 {
     struct oid_s *currentOid = oids;
     struct rlimit lim = { 1024 * 1024, 1024 * 1024 };
-    activeHosts = hostCount = 0;
+    activeHosts = 0;
 
     if (setrlimit(RLIMIT_NOFILE, &lim)) {
         perror("\nsetrlimit");
@@ -437,14 +429,15 @@ int asyncResponse(int operation, struct snmp_session *sp, int reqid, struct snmp
  * The asyncResponse function gets called each time a packet is received.
  * while loop handles async behavior.
  *
+ * PGconn *conn - SQL connection
+ * char *query - SQL query
+ *
  * returns void
  */
-void asynchronous()
+void asynchronous(PGconn *conn, char *query)
 {
-    int i;
-    MYSQL_ROW currentHost;
+    int i, j, hostCount;
     hostContext_t *hostContext;
-    hostContext_t allHosts[hostCount]; /* one hostContext structure per Host in DB */
 
     struct snmp_pdu *request[FINISH];
     struct oid_s *currentOid = oids;
@@ -470,16 +463,27 @@ void asynchronous()
     }
 
     /* startup all hosts */
-    for (hostContext = allHosts; (currentHost = mysql_fetch_row(result)); hostContext++) {
+    PGresult *result = PQexec(conn, query);
+    if (PQresultStatus(result) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "No data retrieved\n");
+        PQclear(result);
+        exit(1);
+    }
+
+    hostCount = PQntuples(result);
+    hostContext_t allHosts[hostCount]; // one hostContext structure per Host in DB
+
+    for (i = 0; i < hostCount; i++) {
         struct snmp_session session;
         struct snmp_pdu *newRequest;
+        hostContext = &allHosts[i];
 
         snmp_sess_init(&session);
         session.version = SNMP_VERSION_2c;
         session.retries = RETRIES;
         session.timeout = TIMEOUT * 1000000;
-        session.peername = currentHost[0];
-        session.community = (u_char *)currentHost[1];
+        session.peername = PQgetvalue(result, i, 0);
+        session.community = (u_char *)PQgetvalue(result, i, 1);
         session.community_len = strlen((const char *)session.community);
         session.callback = asyncResponse;
         session.callback_magic = hostContext;
@@ -488,18 +492,18 @@ void asynchronous()
             snmp_perror("snmp_open");
             continue;
         }
-        hostContext->outputFile = (oids == oids_single) ? stdout : fopen(currentHost[2], "w");
-        fprintf(hostContext->outputFile, "ipv4:%s\n", currentHost[0]);
+        hostContext->outputFile = (oids == oids_single) ? stdout : fopen(PQgetvalue(result, i, 2), "w");
+        fprintf(hostContext->outputFile, "ipv4:%s\n", PQgetvalue(result, i, 0));
 
-        for (i = NON_REP; i < FINISH; i++) {
-            if (! request[i]) {
-                hostContext->requestIds[i] = 0;
+        for (j = NON_REP; j < FINISH; j++) {
+            if (! request[j]) {
+                hostContext->requestIds[j] = 0;
                 continue;
             }
 
-            if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request[i]))) {
-                hostContext->requestIds[i] = newRequest->reqid;
-                if (i == NON_REP) {
+            if (snmp_send(hostContext->session, newRequest = snmp_clone_pdu(request[j]))) {
+                hostContext->requestIds[j] = newRequest->reqid;
+                if (j == NON_REP) {
                     activeHosts++;
                 }
             } else {
@@ -508,7 +512,7 @@ void asynchronous()
             }
         }
     }
-
+    PQclear(result);
 
     int numfds, block;
     struct timeval timeout;
@@ -559,7 +563,8 @@ int main(int argc, char **argv)
     int c, analysis = 0;
     const char *database = NULL, *hostname = NULL, *modem = NULL, *password = NULL, *username = NULL;
     static char usage[] = "usage: %s [-a (to be used for single modem analysis view)] [-d nmsprime_db_name] [-h hostname] [-m modem-id] [-p nmsprime_db_password] [-u nmsprime_db_username]\n";
-    char query[290];
+    char query[512];
+    PGconn *conn;
 
     while ((c = getopt(argc, argv, "ad:h:m:p:u:")) != -1) {
         switch (c) {
@@ -601,15 +606,15 @@ int main(int argc, char **argv)
 
     if (modem) {
         uint32_t modemId = strtoul(modem, NULL, 10);
-        snprintf(query, sizeof(query), "SELECT CONCAT(modem.hostname, '.', provbase.domain_name), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
+        snprintf(query, sizeof(query), "SET search_path TO nmsprime; SELECT CONCAT(modem.hostname, '.', provbase.domain_name), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem, provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
     } else {
-        snprintf(query, sizeof(query), "SELECT COALESCE(INET_NTOA(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
+        snprintf(query, sizeof(query), "SET search_path TO nmsprime; SELECT COALESCE(modem.ipv4::Text, CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem, provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
     }
 
     initialize();
-    connectToMySql(hostname, username, password, database, query);
-    asynchronous();
-    mysql_free_result(result);
+    conn = connectToSql(hostname, username, password, database);
+    asynchronous(conn, query);
+    PQfinish(conn);
     fcloseall();
 
     return 0;
