@@ -44,7 +44,7 @@ typedef enum pass {
     FINISH
 } pass_t;
 
-long repetitions[FINISH] = {0, 9, 5, 3, 3, 33, 5};
+long repetitions[FINISH] = {0, 9, 5, 3, 3, 9, 5};
 
 /* a list of variables to query for */
 typedef struct oid_s {
