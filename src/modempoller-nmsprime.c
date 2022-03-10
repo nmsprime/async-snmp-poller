@@ -601,7 +601,7 @@ int main(int argc, char **argv)
 
     if (modem) {
         uint32_t modemId = strtoul(modem, NULL, 10);
-        snprintf(query, sizeof(query), "SELECT COALESCE(INET_NTOA(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
+        snprintf(query, sizeof(query), "SELECT CONCAT(modem.hostname, '.', provbase.domain_name), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
     } else {
         snprintf(query, sizeof(query), "SELECT COALESCE(INET_NTOA(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem JOIN provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
     }
