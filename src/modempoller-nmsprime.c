@@ -610,7 +610,7 @@ int main(int argc, char **argv)
         uint32_t modemId = strtoul(modem, NULL, 10);
         snprintf(query, sizeof(query), "SET search_path TO nmsprime; SELECT CONCAT(modem.hostname, '.', provbase.domain_name), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem, provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname = 'cm-%u';", modemId);
     } else {
-        snprintf(query, sizeof(query), "SET search_path TO nmsprime; SELECT COALESCE(modem.ipv4::Text, CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem, provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
+        snprintf(query, sizeof(query), "SET search_path TO nmsprime; SELECT COALESCE(host(modem.ipv4), CONCAT(modem.hostname, '.', provbase.domain_name)), provbase.ro_community, CONCAT(modem.hostname, '.', provbase.domain_name) FROM modem, provbase WHERE modem.deleted_at IS NULL AND provbase.deleted_at IS NULL AND modem.hostname LIKE 'cm-%%';");
     }
 
     initialize();
